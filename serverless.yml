@@ -1,0 +1,148 @@
+---
+# Archivo YAML
+# Fecha 28.04.2023
+# Author Alexander Gomez (alexander.gomez.ex@copec.cl)
+service: mock-notificacion-tarjeta
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  region: us-west-2
+  endpointType: regional
+  deploymentBucket:
+    blockPublicAccess: true
+  apiGateway:
+    shouldStartNameWithService: true
+  logs:
+    restApi: true
+
+resources:
+  Resources:
+    ApiGatewayRestApi:
+      Type: AWS::ApiGateway::RestApi
+      Properties:
+        Name: ${self:service}-${sls:stage}
+        Description: Rest api Notificación consumo Tarjetas
+        EndpointConfiguration:
+          Types: [REGIONAL]
+  
+    # Recursos de la API
+    ApiGatewayFolioDeConsumoResource:
+      Type: AWS::ApiGateway::Resource
+      DependsOn: [ApiGatewayRestApi]
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+        ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+        PathPart: "folioDeConsumo"
+        
+    # Validacion de la API
+    ApiGatewayRequestValidator:
+      Type: AWS::ApiGateway::RequestValidator
+      Properties:
+        Name: 'request-validator-all'
+        RestApiId: !Ref ApiGatewayRestApi
+        ValidateRequestBody: true
+        ValidateRequestParameters: true
+    # Models
+    ApiGatewayBodyNotificacionTarjeta:
+      Type: AWS::ApiGateway::Model
+      Properties:
+        Name: InputBodyNotificacionTarjetaModel
+        ContentType: application/json
+        Description: "Esquema del Modelo de notificacion de tarjeta"
+        RestApiId: !Ref ApiGatewayRestApi
+        Schema: ${file(schema-body-notificacion-tarjeta.json)}
+
+    # Recursos
+    ApiGatewayNotificacionResource:
+      Type: AWS::ApiGateway::Resource
+      DependsOn: [ApiGatewayRestApi, ApiGatewayFolioDeConsumoResource]
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+        ParentId: !Ref ApiGatewayFolioDeConsumoResource
+        PathPart: notificacion
+  
+    ApiGatewayNotificacionPostMethod:
+      Type: AWS::ApiGateway::Method
+      DependsOn: ApiGatewayNotificacionResource
+      Properties:
+        OperationName: Notificacion
+        ApiKeyRequired: true
+        RestApiId: !Ref ApiGatewayRestApi
+        ResourceId: !Ref ApiGatewayNotificacionResource
+        HttpMethod: POST
+        AuthorizationType: NONE
+        RequestModels:
+          application/json: !Ref ApiGatewayBodyNotificacionTarjeta
+        RequestValidatorId: !Ref ApiGatewayRequestValidator
+        Integration:
+          Type: MOCK
+          RequestTemplates:
+            application/json: '{"statusCode": 200}'
+          IntegrationResponses:
+            - StatusCode: 200
+          PassthroughBehavior: WHEN_NO_MATCH
+        MethodResponses:
+          - StatusCode: 200
+            ResponseModels:
+              application/json:
+  
+    ApiGatewayDeployment:
+      Type: AWS::ApiGateway::Deployment
+      DependsOn:
+      - ApiGatewayNotificacionPostMethod
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+    
+    ApiGatewayStage:  
+      Type: AWS::ApiGateway::Stage
+      DependsOn:
+        - ApiGatewayRestApi
+        - ApiGatewayDeployment
+      Properties:
+        StageName: ${sls:stage}
+        RestApiId: !Ref ApiGatewayRestApi
+        DeploymentId: !Ref ApiGatewayDeployment
+    
+    ApiGatewayApiKey: 
+      Type: AWS::ApiGateway::ApiKey
+      Properties: 
+        Name: ${self:service}-${sls:stage}-apikey
+        Description: "Mock - Notificiacion Tarjeta Api Key"
+        Enabled: true
+        GenerateDistinctId: false
+    
+    ApiGatewayUsagePlanBasic:
+      Type: AWS::ApiGateway::UsagePlan
+      DependsOn:
+        - ApiGatewayRestApi
+        - ApiGatewayStage
+      Properties:
+        ApiStages:
+          - ApiId: !Ref ApiGatewayRestApi
+            Stage: !Ref ApiGatewayStage
+        Description: Plan Basico
+        Quota:
+          Limit: 500
+          Offset: 0
+          Period: DAY
+        Throttle:
+          BurstLimit: 200
+          RateLimit: 100
+        UsagePlanName: ${self:service}-usage-plan
+        
+    ApiUsagePlanKey:
+      Type: "AWS::ApiGateway::UsagePlanKey"
+      Properties:
+        KeyId: !Ref ApiGatewayApiKey
+        KeyType: API_KEY
+        UsagePlanId: !Ref ApiGatewayUsagePlanBasic
+  
+  Outputs:
+    AppApiEndpoint:
+      Description: API Endpoint
+      Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${sls:stage}"
+      
+    ApiKeyId:
+      Description: API Key value
+      Value: !Ref ApiGatewayApiKey

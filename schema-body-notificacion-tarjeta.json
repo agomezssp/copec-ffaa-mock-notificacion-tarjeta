@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "id_externo": {
+      "type": "string"
+    },
+    "id_interno": {
+      "type": "string"
+    },
+    "pedido_sap": {
+      "type": "string"
+    },
+    "url_guia_traslado": {
+      "type": "string"
+    },
+    "mensaje": {
+      "type": "string"
+    },
+    "estado": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id_externo",
+    "id_interno",
+    "pedido_sap",
+    "url_guia_traslado",
+    "mensaje",
+    "estado"
+  ]
+}
